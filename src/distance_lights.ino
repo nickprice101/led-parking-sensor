@@ -15,12 +15,12 @@
 
 #include <Adafruit_NeoPixel.h>
 
-char wifi_ssid[] = "<wifi ssid>";            // your network SSID (name)
-char wifi_password[] = "<wifi password>";  // your network password
+char wifi_ssid[] = "**your_wifi_ssid**";            // your network SSID (name)
+char wifi_password[] = "**your_wifi_password**";  // your network password
 
 /**************************** FOR OTA **************************************************/
-#define SENSORNAME "<sensor name>"
-#define OTApassword "<OTA password>" // change this to whatever password you want to use when you upload OTA
+#define SENSORNAME "parking-garage-sensor"
+#define OTApassword "**your_ota_password**" // change this to whatever password you want to use when you upload OTA
 int OTAport = 8266;
 int calibrationTime = 0;
 
