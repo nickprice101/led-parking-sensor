@@ -72,10 +72,10 @@ String webSite="";
 String webSiteComplete="";
 
 void setup() {
-  webSite +="<html><head><title>Canal House Parking Sensor</title><style>body{ background-color: #ffffff; font-family: Arial, Helvetica, Sans-Serif; Color: #111111; }</style>";
+  webSite +="<html><head><title>Parking Sensor</title><style>body{ background-color: #ffffff; font-family: Arial, Helvetica, Sans-Serif; Color: #111111; }</style>";
   webSite +="<script>setTimeout(function(){ window.location.href = './'; }, 5000);</script></head>"; //reset/reload the URL after 5 seconds.
   webSite +="<body><table width=50% align=center>";
-  webSite +="<tr><td width=40% rowspan=4><img src='http://192.168.1.152:10/images/parking.png' width=100%></td><td colspan=2 align=center><h2>Canal House Parking Sensor</h2></td></tr>";
+  webSite +="<tr><td width=40% rowspan=4><img src='http://<location of a nice picture>/images/parking.png' width=100%></td><td colspan=2 align=center><h2>Parking Sensor</h2></td></tr>";
   webSite +="<tr><td align=left>Home</td><td align=center><a href='./'><button>HOME</button></a></td>";
   webSite +="<tr><td align=left>LED Lights</td><td align=center><a href='lightsOn'><button>ON</button></a>&nbsp;<a href='lightsOff'><button>OFF</button></a></td></tr>";
   webSite +="<tr><td align=left>Object Distance</td><td align=center>";
