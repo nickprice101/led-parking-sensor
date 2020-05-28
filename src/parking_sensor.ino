@@ -1,12 +1,10 @@
 /*
-  The orginal script was designed to take several readings from the MaxBotix sonar and generate a mode/median.
+  This script is designed to take several readings from the MaxBotix sonar and generate a mode/median.
   Author: Jason Lessels
   Date created: 2011/June/06
   License: GPL (=>2)
   This work has been compiled using many sources mainly posts/wiki posts from;
   Allen, Bruce (2009/July/23) and Gentles, Bill (2010/Nov/12)
-
-  This version has been modified as part of an led parking sensor project by N Price (June 2019).
 */
 #include <Maxbotix.h>
 #include <ESP8266WiFi.h>
@@ -57,12 +55,13 @@ bool stateOn = true;
 long pulse;
 //int modE;
 int distance = 0;
+int old_distance = 0;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 //setup OSC UDP connection variables
 WiFiUDP Udp;                                // A UDP instance to let us send and receive packets over UDP
-const IPAddress outIp(192,168,xxx,xxx);     // remote IP of your computer
+const IPAddress outIp(192,168,xxx,xxx);     // remote IP of the lights
 const unsigned int outPort = 8888;          // remote port to receive OSC
 const unsigned int localPort = 9999;        // local port to listen for OSC packets (actually not used for sending)
 
@@ -301,16 +300,18 @@ void loop()
     //Serial.print("The mode/median is: ");
     //Serial.print(distance);
     //Serial.println();
-
-    OSCMessage msg("/distance");
-    msg.add(distance);
-    Udp.beginPacket(outIp, outPort);
-    msg.send(Udp);
-    Udp.endPacket();
-    msg.empty();
-    
-    delay(200);
-    sendState();
+    if (distance != old_distance) { //distance has changed
+        OSCMessage msg("/distance");
+        msg.add(distance);
+        Udp.beginPacket(outIp, outPort);
+        msg.send(Udp);
+        Udp.endPacket();
+        msg.empty();
+        
+        delay(200);
+        sendState();
+        old_distance = distance;
+    }
   } else {
     OSCMessage msg("/distance");
     msg.add(-999); // send off message to lights
