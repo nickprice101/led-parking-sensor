@@ -1,8 +1,8 @@
     
+// VERSION: v3
 /*---------------------------------------------------------------------------------------------
   Open Sound Control (OSC) library for the ESP8266/ESP32
-
-  This version has been modified as part of an led parking sensor project by N Price (June 2019).
+  Example for receiving open sound control (OSC) messages on the ESP8266/ESP32
 --------------------------------------------------------------------------------------------- */
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -11,25 +11,26 @@
 #include <OSCMessage.h>
 #include <OSCBundle.h>
 #include <OSCData.h>
+#include <ESP8266WebServer.h>
 
 #include <Adafruit_NeoPixel.h>
 
-char ssid[] = "**your_wifi_ssid**";          // your network SSID (name)
-char pass[] = "**your_wifi_password**";               // your network password
+char wifi_ssid[] = "<wifi ssid>";            // your network SSID (name)
+char wifi_password[] = "<wifi password>";  // your network password
 
 /**************************** FOR OTA **************************************************/
-#define SENSORNAME "parking-garage-lights"
-#define OTApassword "**your_ota_password**" // change this to whatever password you want to use when you upload OTA
+#define SENSORNAME "<sensor name>"
+#define OTApassword "<OTA password>" // change this to whatever password you want to use when you upload OTA
 int OTAport = 8266;
 int calibrationTime = 0;
 
 // A UDP instance to let us send and receive packets over UDP
 WiFiUDP Udp;
-//const IPAddress outIp(192,168,xxx,xxx);     // remote IP (not needed for receive)
+//const IPAddress outIp(192,168,0,0);     // remote IP (not needed for receive)
 //const unsigned int outPort = 9999;          // remote port (not needed for receive)
 const unsigned int localPort = 8888;        // local port to listen for UDP packets (here's where we send the packets)
 
-const uint16_t PixelCount = 128; // number of pixels
+const uint16_t PixelCount = 112; // number of pixels
 #define PIN D4 // Pin where NeoPixels are connected
 
 // Declare our NeoPixel strip object:
@@ -40,14 +41,20 @@ Adafruit_NeoPixel strip(PixelCount, PIN, NEO_GRB + NEO_KHZ800);
 OSCErrorCode error;
 unsigned int carDistance = 0;  
 unsigned int oldCarDistance = 0;
+unsigned int timeout = 10; // time of no distance change before lights off (seconds)
 
-int blockSize = 4;
-double maxDistance = 200;
-double minDistance = 30;
-double warningDistance = 20;
+int blockSize = 14;
+double maxDistance = 250;
+double minDistance = 45;
+double warningDistance = 35;
 double adjustedCarDistance = 0;
 int flashDelay = 50; //time in ms
+int lastUpdate = 0; //last time the lights were changed.
 boolean lights_on = false;
+boolean manualOverride = false;
+
+double distanceFraction;
+int startPixel;
 
 int startRed = 0;
 int startGreen = 255;
@@ -59,37 +66,32 @@ int endBlue = 0;
 
 int adjustedPixelCount = int((PixelCount/2) - blockSize);
 
+MDNSResponder mdns;
+ESP8266WebServer server(80);
+String webSite="";
+String webSiteComplete="";
+
 void setup() {
+  webSite +="<html><head><title>Canal House Parking Sensor</title><style>body{ background-color: #ffffff; font-family: Arial, Helvetica, Sans-Serif; Color: #111111; }</style>";
+  webSite +="<script>setTimeout(function(){ window.location.href = './'; }, 5000);</script></head>"; //reset/reload the URL after 5 seconds.
+  webSite +="<body><table width=50% align=center>";
+  webSite +="<tr><td width=40% rowspan=4><img src='http://192.168.1.152:10/images/parking.png' width=100%></td><td colspan=2 align=center><h2>Canal House Parking Sensor</h2></td></tr>";
+  webSite +="<tr><td align=left>Home</td><td align=center><a href='./'><button>HOME</button></a></td>";
+  webSite +="<tr><td align=left>LED Lights</td><td align=center><a href='lightsOn'><button>ON</button></a>&nbsp;<a href='lightsOff'><button>OFF</button></a></td></tr>";
+  webSite +="<tr><td align=left>Object Distance</td><td align=center>";
+  
   Serial.begin(115200);
+  //Wait for the serial connection
+  delay(100);
 
   ArduinoOTA.setPort(OTAport);
   ArduinoOTA.setHostname(SENSORNAME);
   ArduinoOTA.setPassword((const char *)OTApassword);
 
-  Serial.print("calibrating sensor ");
-  for (int i = 0; i < calibrationTime; i++) {
-    Serial.print(".");
-    delay(1000);
-  }
-
   Serial.println("Starting Node named " + String(SENSORNAME));
 
   // Connect to WiFi network
-  Serial.println();
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, pass);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  setup_wifi();
 
   ArduinoOTA.onStart([]() {
     Serial.println("Starting");
@@ -120,12 +122,53 @@ void setup() {
 
   Serial.print("Number of pixels: ");
   Serial.println(strip.numPixels());
+
+ if (mdns.begin("esp8266", WiFi.localIP())) {
+   Serial.println("MDNS responder started");
+  }
+    server.on("/", [](){
+    server.send(200, "text/html", webSiteComplete);
+    });
+  server.on("/lightsOn", [](){
+    server.send(200, "text/html", webSiteComplete);
+    all_lights_on(); //turn on all lights
+  });
+  server.on("/lightsOff", [](){
+    server.send(200, "text/html", webSiteComplete);
+    all_lights_off(); //turn off all lights
+  });
+    
+  server.begin();
+  Serial.println("HTTP server started");
+  
 }
 
 void distance(OSCMessage &msg) {
   carDistance = msg.getInt(0);
   Serial.print("/distance: ");
   Serial.println(carDistance);
+}
+
+/********************************** START SETUP WIFI*****************************************/
+void setup_wifi() {
+
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(wifi_ssid);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(wifi_ssid, wifi_password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
 }
 
 void update_lights() {
@@ -137,8 +180,8 @@ void update_lights() {
                                          lights_on = false;
               }
               if (carDistance != oldCarDistance || (!lights_on)) { // if the distance has changed or lights are not on
-                           double distanceFraction;
-                           int startPixel;
+                           //double distanceFraction;
+                           //int startPixel;
                            strip.clear(); //reset RAM values
                            //turn on pixels based on distance
                            distanceFraction = min(max(1 - ((carDistance - minDistance)/(maxDistance - minDistance)),0.0),1.0);
@@ -153,8 +196,24 @@ void update_lights() {
               }
 }
 
+void all_lights_on() {
+  manualOverride=true;
+  strip.clear(); //reset RAM values
+  for (int pixel = 1; pixel <= PixelCount; pixel++) {
+    strip.setPixelColor(pixel, strip.Color(255,255,255));
+  }
+  strip.show();
+}
+
+void all_lights_off() {
+  manualOverride = false;
+  strip.clear(); // reset RAM values
+  strip.show(); // turn off the lights
+}
+
 void loop() {
   ArduinoOTA.handle();
+  server.handleClient();
   
   OSCMessage msg; // create an empty message for the incoming data
   int size = Udp.parsePacket();
@@ -171,17 +230,16 @@ void loop() {
       Serial.println(error);
     }
   }
-  if ((carDistance < 0) { // if carDistance is negative then the sensor is off
-    if (carDistance != oldCarDistance)) { // only run once in off state
-      strip.clear(); // reset RAM values
-      strip.show(); // turn off the lights
-      oldCarDistance = carDistance;
+  if (!manualOverride) { //if no manual override
+    if ((carDistance < 0) || ((millis() - lastUpdate) > (timeout * 1000)) && (oldCarDistance == carDistance)) { // if carDistance is negative (then the sensor is off) or timeout has been reached and distance hasn't changed 
+        all_lights_off();
+    } else if ((carDistance != oldCarDistance) || (carDistance < warningDistance)) { // else update lights if the distance reported has changed or we need to flash
+        update_lights();
+        if (carDistance >= warningDistance) lastUpdate = millis(); //only update if warning distance has not been reached.
     }
-  } else { // else update lights
-      update_lights();
   }
+  webSiteComplete = webSite + String(carDistance) + " cm</td></tr></table></body></html>";
 }
-
 /****reset***/
 void software_Reset() // Restarts program from beginning but does not reset the peripherals and registers
 {
